@@ -5,29 +5,29 @@ namespace TestUnit.FileLoading;
 
 public class RegionResolverTests
 {
-    // One language present, mapped to its region. Covers every ApplicationTitleLanguage index.
+    // One language present, mapped to its eShop country. Covers every ApplicationTitleLanguage index.
     [Theory]
     [InlineData(0, "US")]   // AmericanEnglish
-    [InlineData(5, "US")]   // LatinAmericanSpanish  -> Americas
-    [InlineData(9, "US")]   // CanadianFrench        -> Americas (French, but not Europe)
+    [InlineData(1, "GB")]   // BritishEnglish
     [InlineData(2, "JP")]   // Japanese
-    [InlineData(1, "GB")]   // BritishEnglish        -> Europe (English, but not US)
-    [InlineData(3, "GB")]   // French
-    [InlineData(4, "GB")]   // German
-    [InlineData(6, "GB")]   // Spanish (Spain)
-    [InlineData(7, "GB")]   // Italian
-    [InlineData(8, "GB")]   // Dutch
-    [InlineData(10, "GB")]  // Portuguese
-    [InlineData(11, "GB")]  // Russian
+    [InlineData(3, "FR")]   // French
+    [InlineData(4, "DE")]   // German
+    [InlineData(5, "MX")]   // LatinAmericanSpanish
+    [InlineData(6, "ES")]   // Spanish
+    [InlineData(7, "IT")]   // Italian
+    [InlineData(8, "NL")]   // Dutch
+    [InlineData(9, "CA")]   // CanadianFrench
+    [InlineData(10, "PT")]  // Portuguese
+    [InlineData(11, "RU")]  // Russian
     [InlineData(12, "KR")]  // Korean
     [InlineData(13, "HK")]  // TraditionalChinese
-    [InlineData(14, "HK")]  // SimplifiedChinese
-    public void ResolveRegion_SingleLanguage_MapsToRegion(int language, string expected)
+    [InlineData(14, "CN")]  // SimplifiedChinese
+    public void ResolveRegion_SingleLanguage_MapsToCountry(int language, string expected)
     {
         Assert.Equal(expected, RegionResolver.ResolveRegion(new[] { language }));
     }
 
-    // Inputs that don't resolve to any region.
+    // Inputs that don't resolve to any country.
     [Fact]
     public void ResolveRegion_Empty_ReturnsNull()
         => Assert.Null(RegionResolver.ResolveRegion(System.Array.Empty<int>()));
@@ -36,16 +36,17 @@ public class RegionResolverTests
     public void ResolveRegion_UnknownIndex_ReturnsNull()
         => Assert.Null(RegionResolver.ResolveRegion(new[] { 99 }));
 
-    // Order-dependent combinations — the priority is Americas > Japan > Europe > Korea > China.
+    // Market priority for multi-language titles: American English > Japanese > Asian
+    // single-country markets > European languages.
     [Theory]
     [InlineData(new[] { 2, 0 }, "US")]                 // world release ships American English -> US, not JP
-    [InlineData(new[] { 2, 4 }, "JP")]                 // Japanese + German, no Americas -> JP beats Europe
-    [InlineData(new[] { 4, 12 }, "GB")]                // German + Korean -> Europe beats Korea
-    [InlineData(new[] { 12, 13 }, "KR")]               // Korean + Chinese -> Korea beats China
-    [InlineData(new[] { 9, 3 }, "US")]                 // CanadianFrench (Americas) + French (Europe) -> US
-    [InlineData(new[] { 99, 4 }, "GB")]                // unknown index ignored, German -> GB
+    [InlineData(new[] { 2, 4 }, "JP")]                 // Japanese + German, no American English -> JP
+    [InlineData(new[] { 4, 12 }, "KR")]                // German + Korean -> Asian market wins over Europe
+    [InlineData(new[] { 12, 13 }, "KR")]               // Korean + Chinese -> Korea before China
+    [InlineData(new[] { 3, 4 }, "DE")]                 // French + German, no English -> German (larger EU market)
+    [InlineData(new[] { 99, 3 }, "FR")]                // unknown index ignored, French -> FR
     [InlineData(new[] { 0, 1, 2, 3, 4, 5, 6 }, "US")]  // broad multi-language world release -> US
-    public void ResolveRegion_MultipleLanguages_PrioritisesByRegion(int[] languages, string expected)
+    public void ResolveRegion_MultipleLanguages_PicksPrimaryMarket(int[] languages, string expected)
     {
         Assert.Equal(expected, RegionResolver.ResolveRegion(languages));
     }
