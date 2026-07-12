@@ -12,6 +12,9 @@ public interface IContent
     public string Name { get; set; }
     public string Publisher { get; set; }
 
+    // Region inferred from the NACP supported-language flags; null when it can't be determined.
+    public string? Region { get; set; }
+
     public string ApplicationTitleId { get; }
 
     public string PatchTitleId { get; }

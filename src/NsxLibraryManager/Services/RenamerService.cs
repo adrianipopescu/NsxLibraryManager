@@ -486,9 +486,10 @@ public class RenamerService(
                 }
                 return Result.Success(fileInfo);
             }
-            //prefer Name and Region from titledb instead of the file
+            //prefer Name and Region from titledb instead of the file, but keep the
+            //file-inferred region when titledb has none
             fileInfo.TitleName = titledbTitle.TitleName;
-            fileInfo.Region = titledbTitle.Region;
+            fileInfo.Region = string.IsNullOrEmpty(titledbTitle.Region) ? fileInfo.Region : titledbTitle.Region;
             
             if (useEnglishNaming)
             {

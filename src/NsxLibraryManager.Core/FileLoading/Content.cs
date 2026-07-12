@@ -31,5 +31,6 @@ public class Content : IContent
     public int PatchNumber => _cnmt.TitleVersion.GetPatchNumber();
     public string Name { get; set; } = string.Empty;
     public string Publisher { get; set; } = string.Empty;
+    public string? Region { get; set; }
     public byte[]? Icon { get; set; }
 }

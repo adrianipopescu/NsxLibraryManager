@@ -59,12 +59,16 @@ public class PackageInfoLoader : IPackageInfoLoader
         var application = fileContents.Applications?.FirstOrDefault();
         if (application == null) return null;
         var publisher = string.Empty;
+        var supportedLanguages = new List<int>();
 
+        var languageIndex = 0;
         foreach (ref readonly var desc in application.Nacp.Value.Title.ItemsRo)
         {
-            if (desc.PublisherString.IsEmpty()) continue;
-            publisher = desc.PublisherString.ToString();
-            break;
+            if (!desc.NameString.IsEmpty())
+                supportedLanguages.Add(languageIndex);
+            if (publisher.Length == 0 && !desc.PublisherString.IsEmpty())
+                publisher = desc.PublisherString.ToString();
+            languageIndex++;
         }
 
         var contentMeta = application.AddOnContent.Count != 0
@@ -76,6 +80,7 @@ public class PackageInfoLoader : IPackageInfoLoader
         {
                 Name = application.Name,
                 Publisher = publisher,
+                Region = RegionResolver.ResolveRegion(supportedLanguages),
                 Icon = fileContents.Icon
         };
 
