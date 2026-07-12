@@ -2,7 +2,7 @@ name: Docker
 on:
   push:
     tags: ['v*.*.*']
-    branches: ['add-fallbacks-regex']
+    branches: ['ci-build-refresh-titledb']
   release:
     types: [created]
 env:
