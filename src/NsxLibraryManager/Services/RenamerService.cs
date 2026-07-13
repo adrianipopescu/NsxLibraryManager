@@ -474,15 +474,26 @@ public class RenamerService(
                 await _titledbDbContext.Titles.FirstOrDefaultAsync(t => t.ApplicationId == fileInfo.ApplicationId);
             if (titledbTitle is null)
             {
-                //try to find OtherApplicationName in titledb
                 if (fileInfo.ContentType is TitleContentType.Update or TitleContentType.DLC
                     && string.IsNullOrWhiteSpace(fileInfo.OtherApplicationName) && !string.IsNullOrEmpty(fileInfo.OtherApplicationId))
                 {
+                    //borrow name and region from a titledb add-on of the same base game
                     var otherApplication = await _titledbDbContext.Titles.FirstOrDefaultAsync(t => t.OtherApplicationId == fileInfo.OtherApplicationId);
-                    if (otherApplication is null) return Result.Success(fileInfo);
-            
-                    fileInfo.OtherApplicationName = otherApplication.TitleName;
-                    fileInfo.Region = otherApplication.Region;
+                    if (otherApplication is not null)
+                    {
+                        fileInfo.OtherApplicationName = otherApplication.TitleName;
+                        fileInfo.Region = otherApplication.Region;
+                    }
+
+                    //a DLC/update carries no region of its own, so when titledb knows nothing about
+                    //the base game either, inherit the region from the parent already in the local
+                    //library (whose region may itself be inferred from its file)
+                    if (string.IsNullOrEmpty(fileInfo.Region))
+                    {
+                        var localParent = await _nsxLibraryDbContext.Titles.FirstOrDefaultAsync(t => t.ApplicationId == fileInfo.OtherApplicationId);
+                        if (!string.IsNullOrEmpty(localParent?.Region))
+                            fileInfo.Region = localParent.Region;
+                    }
                 }
                 return Result.Success(fileInfo);
             }

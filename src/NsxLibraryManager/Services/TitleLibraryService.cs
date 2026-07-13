@@ -216,6 +216,8 @@ public class TitleLibraryService(
             nsxLibraryTitle.PackageType = metaFromFileName.PackageType;
             nsxLibraryTitle.Publisher = libraryTitle.Publisher;
             nsxLibraryTitle.Rating = libraryTitle.Rating;
+            // titledb has no entry, so persist the region inferred from the file's NACP
+            nsxLibraryTitle.Region = libraryTitle.Region;
             nsxLibraryTitle.ReleaseDate = libraryTitle.ReleaseDate;
             nsxLibraryTitle.Size = metaFromFileName.Size;
             nsxLibraryTitle.Version = libraryTitle.Version;
