@@ -469,7 +469,23 @@ public class RenamerService(
             }
             
             var fileInfo = fileInfoResult.Value;
-            
+
+            // A DLC/update belongs to its base game: when the parent is already in the local
+            // library, use the parent's region so add-ons stay filed with the game, overriding
+            // titledb's own per-add-on region (which is often inconsistent across one game's DLC).
+            async Task<Result<LibraryTitleDto>> WithParentRegion(LibraryTitleDto fi)
+            {
+                if (fi.ContentType is TitleContentType.Update or TitleContentType.DLC
+                    && !string.IsNullOrEmpty(fi.OtherApplicationId))
+                {
+                    var localParent = await _nsxLibraryDbContext.Titles
+                        .FirstOrDefaultAsync(t => t.ApplicationId == fi.OtherApplicationId);
+                    if (!string.IsNullOrEmpty(localParent?.Region))
+                        fi.Region = localParent.Region;
+                }
+                return Result.Success(fi);
+            }
+
             var titledbTitle =
                 await _titledbDbContext.Titles.FirstOrDefaultAsync(t => t.ApplicationId == fileInfo.ApplicationId);
             if (titledbTitle is null)
@@ -484,18 +500,8 @@ public class RenamerService(
                         fileInfo.OtherApplicationName = otherApplication.TitleName;
                         fileInfo.Region = otherApplication.Region;
                     }
-
-                    //a DLC/update carries no region of its own, so when titledb knows nothing about
-                    //the base game either, inherit the region from the parent already in the local
-                    //library (whose region may itself be inferred from its file)
-                    if (string.IsNullOrEmpty(fileInfo.Region))
-                    {
-                        var localParent = await _nsxLibraryDbContext.Titles.FirstOrDefaultAsync(t => t.ApplicationId == fileInfo.OtherApplicationId);
-                        if (!string.IsNullOrEmpty(localParent?.Region))
-                            fileInfo.Region = localParent.Region;
-                    }
                 }
-                return Result.Success(fileInfo);
+                return await WithParentRegion(fileInfo);
             }
             //prefer Name and Region from titledb instead of the file, but keep the
             //file-inferred region when titledb has none
@@ -540,14 +546,14 @@ public class RenamerService(
             fileInfo.DlcCount = titledbTitle.DlcCount;
 
             if (titledbTitle.ContentType == TitleContentType.Base
-                || string.IsNullOrEmpty(titledbTitle.OtherApplicationId)) return Result.Success(fileInfo);
+                || string.IsNullOrEmpty(titledbTitle.OtherApplicationId)) return await WithParentRegion(fileInfo);
 
-            if (fileInfo.OtherApplicationName is not null) return Result.Success(fileInfo);
-            
+            if (fileInfo.OtherApplicationName is not null) return await WithParentRegion(fileInfo);
+
             var parentTitle = await _titledbDbContext.Titles.FirstOrDefaultAsync(t => t.ApplicationId == titledbTitle.OtherApplicationId);
             fileInfo.OtherApplicationName = parentTitle?.TitleName;
 
-            return Result.Success(fileInfo);
+            return await WithParentRegion(fileInfo);
         }
         catch (Exception e)
         {
