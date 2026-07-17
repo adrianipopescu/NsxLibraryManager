@@ -464,8 +464,7 @@ public class RenamerService(
         return Task.FromResult(newPath);
     }
 
-    private async Task<Result<LibraryTitleDto>> GetAggregatedFileInfo(string fileLocation, bool useEnglishNaming,
-        IReadOnlyDictionary<string, string> parentRegions)
+    private async Task<Result<LibraryTitleDto>> GetAggregatedFileInfo(string fileLocation, bool useEnglishNaming)
     {
         try
         {
@@ -476,22 +475,6 @@ public class RenamerService(
             }
 
             var fileInfo = fileInfoResult.Value;
-
-            // A DLC/update belongs to its base game: when the parent is already in the local library,
-            // use the parent's region so add-ons stay filed with the game, overriding titledb's own
-            // per-add-on region (which is often inconsistent across one game's DLC). Reads the
-            // preloaded region map so it's an in-memory lookup, not a query per file.
-            Task<Result<LibraryTitleDto>> WithParentRegion(LibraryTitleDto fi)
-            {
-                if (fi.ContentType is TitleContentType.Update or TitleContentType.DLC
-                    && !string.IsNullOrEmpty(fi.OtherApplicationId)
-                    && parentRegions.TryGetValue(fi.OtherApplicationId, out var parentRegion)
-                    && !string.IsNullOrEmpty(parentRegion))
-                {
-                    fi.Region = parentRegion;
-                }
-                return Task.FromResult(Result.Success(fi));
-            }
 
             var titledbTitle =
                 await _titledbDbContext.Titles.FirstOrDefaultAsync(t => t.ApplicationId == fileInfo.ApplicationId);
@@ -508,7 +491,7 @@ public class RenamerService(
                         fileInfo.Region = otherApplication.Region;
                     }
                 }
-                return await WithParentRegion(fileInfo);
+                return Result.Success(fileInfo);
             }
             //prefer Name and Region from titledb instead of the file, but keep the
             //file-inferred region when titledb has none
@@ -553,14 +536,14 @@ public class RenamerService(
             fileInfo.DlcCount = titledbTitle.DlcCount;
 
             if (titledbTitle.ContentType == TitleContentType.Base
-                || string.IsNullOrEmpty(titledbTitle.OtherApplicationId)) return await WithParentRegion(fileInfo);
+                || string.IsNullOrEmpty(titledbTitle.OtherApplicationId)) return Result.Success(fileInfo);
 
-            if (fileInfo.OtherApplicationName is not null) return await WithParentRegion(fileInfo);
+            if (fileInfo.OtherApplicationName is not null) return Result.Success(fileInfo);
 
             var parentTitle = await _titledbDbContext.Titles.FirstOrDefaultAsync(t => t.ApplicationId == titledbTitle.OtherApplicationId);
             fileInfo.OtherApplicationName = parentTitle?.TitleName;
 
-            return await WithParentRegion(fileInfo);
+            return Result.Success(fileInfo);
         }
         catch (Exception e)
         {
@@ -586,13 +569,27 @@ public class RenamerService(
             _ => false
         };
 
-        var fileList = new List<RenameTitleDto>();
+        // Parse every file first (parsing is the only thing that yields a title id), collecting the
+        // ids we'll match against the library: each file's own id (dupe check) and each DLC/update's
+        // parent id (region inheritance).
+        var parsed = new List<(string File, Result<LibraryTitleDto> Result)>();
+        var neededIds = new HashSet<string>();
+        foreach (var file in files)
+        {
+            logger.LogInformation("Analyzing {}", file);
+            var result = await GetAggregatedFileInfo(file, useEnglishNaming);
+            parsed.Add((file, result));
+            if (result.IsFailure) continue;
+            var info = result.Value;
+            if (!string.IsNullOrEmpty(info.ApplicationId)) neededIds.Add(info.ApplicationId);
+            if (info.ContentType is TitleContentType.Update or TitleContentType.DLC
+                && !string.IsNullOrEmpty(info.OtherApplicationId)) neededIds.Add(info.OtherApplicationId);
+        }
 
-        // One-shot load of the library keyed by title id, feeding both the cross-format dupe check
-        // and the DLC/update parent-region lookup in-memory instead of a query per file (avoids N+1;
-        // Titles has no index on ApplicationId, so each such query would table-scan 13k+ rows).
+        // One query for only the library rows we need (EF 8 translates this to a single IN via
+        // json_each, one bound parameter), feeding the dupe check and parent-region lookup in-memory.
         var libraryRows = await _nsxLibraryDbContext.Titles
-            .Where(t => t.ApplicationId != null && t.FileName != null)
+            .Where(t => t.ApplicationId != null && t.FileName != null && neededIds.Contains(t.ApplicationId))
             .Select(t => new { t.ApplicationId, t.FileName, t.Region })
             .ToListAsync();
         var libraryByAppId = libraryRows
@@ -603,23 +600,32 @@ public class RenamerService(
             .GroupBy(t => t.ApplicationId!)
             .ToDictionary(g => g.Key, g => g.First().Region!);
 
-        foreach (var file in files)
+        var fileList = new List<RenameTitleDto>();
+        foreach (var (file, result) in parsed)
         {
-            logger.LogInformation("Analyzing {}", file);
-            var fileInfoResult = await GetAggregatedFileInfo(file, useEnglishNaming, regionByAppId);
-            if (fileInfoResult.IsFailure)
+            if (result.IsFailure)
             {
                 fileList.Add(new RenameTitleDto
                 {
                     SourceFileName = file,
                     Error = true,
                     Status = RenameStatus.Error,
-                    ErrorMessage = fileInfoResult.Error
+                    ErrorMessage = result.Error
                 });
                 continue;
             }
 
-            var fileInfo = fileInfoResult.Value;
+            var fileInfo = result.Value;
+
+            // DLC/update belongs to its base game: when the parent is in the local library, use its
+            // region (overriding titledb's inconsistent per-add-on region) so add-ons stay filed with it.
+            if (fileInfo.ContentType is TitleContentType.Update or TitleContentType.DLC
+                && !string.IsNullOrEmpty(fileInfo.OtherApplicationId)
+                && regionByAppId.TryGetValue(fileInfo.OtherApplicationId, out var parentRegion)
+                && !string.IsNullOrEmpty(parentRegion))
+            {
+                fileInfo.Region = parentRegion;
+            }
             var (newPath, buildStatus, errorMessage) = await TryBuildNewFileNameAsync(fileInfo, file, renameType);
             if (buildStatus != RenameStatus.Ready)
             {
