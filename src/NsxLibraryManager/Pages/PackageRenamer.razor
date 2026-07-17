@@ -2,6 +2,7 @@
 @using NsxLibraryManager.Core.Models
 @using NsxLibraryManager.Shared.Dto
 @using NsxLibraryManager.Shared.Enums
+@using NsxLibraryManager.Extensions
 <PageTitle>Renamer</PageTitle>
 <RadzenTabs @bind-SelectedIndex=@selectedTabIndex>
 <Tabs>
@@ -30,8 +31,15 @@
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="RenameTitleDto" Property="TitleId" Title="Title Id" Width="100px"/>
                 <RadzenDataGridColumn TItem="RenameTitleDto" Property="TitleName" Title="Name" Width="100px"/>
-                <RadzenDataGridColumn TItem="RenameTitleDto" Property="Error" Title="Error" Width="50px" FormatString="{0}" FormatProvider="@_myBooleanProvider"/>
-                <RadzenDataGridColumn TItem="RenameTitleDto" Property="Duplicate" Title="Dupe" Width="50px" FormatString="{0}" FormatProvider="@_myBooleanProvider"/>
+                <RadzenDataGridColumn TItem="RenameTitleDto" Property="Region" Title="Region" Width="60px">
+                    <Template Context="renameTitle">@RenameDisplay.RegionFlag(renameTitle.Region)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="RenameTitleDto" Property="Status" Title="Status" Width="60px">
+                    <Template Context="renameTitle">@RenameDisplay.StatusEmoji(renameTitle.Status)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="RenameTitleDto" Property="Duplicate" Title="Dupe" Width="50px">
+                    <Template Context="renameTitle">@(renameTitle.Duplicate ? "✔️" : "")</Template>
+                </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="RenameTitleDto" Property="DuplicateOf" Title="Existing Copy" Width="200px">
                     <Template Context="renameTitle">
                         <p style="white-space:pre-wrap">@renameTitle.DuplicateOf</p>

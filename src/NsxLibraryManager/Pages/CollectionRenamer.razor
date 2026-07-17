@@ -2,6 +2,7 @@
 @using NsxLibraryManager.Core.Models
 @using NsxLibraryManager.Shared.Dto
 @using NsxLibraryManager.Shared.Enums
+@using NsxLibraryManager.Extensions
 
 <RadzenTabs @bind-SelectedIndex="@selectedTabIndex" Change="@OnChangeTab">
     <Tabs>
@@ -30,8 +31,15 @@
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn Property="TitleId" Title="Title Id" Width="100px"/>
                         <RadzenDataGridColumn Property="TitleName" Title="Name" Width="100px"/>
-                        <RadzenDataGridColumn Property="Error" Title="Error" Width="50px"/>
-                        <RadzenDataGridColumn Property="Duplicate" Title="Dupe" Width="50px"/>
+                        <RadzenDataGridColumn TItem="RenameTitleDto" Property="Region" Title="Region" Width="60px">
+                            <Template Context="renameTitle">@RenameDisplay.RegionFlag(renameTitle.Region)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RenameTitleDto" Property="Status" Title="Status" Width="60px">
+                            <Template Context="renameTitle">@RenameDisplay.StatusEmoji(renameTitle.Status)</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RenameTitleDto" Property="Duplicate" Title="Dupe" Width="50px">
+                            <Template Context="renameTitle">@(renameTitle.Duplicate ? "✔️" : "")</Template>
+                        </RadzenDataGridColumn>
                         <RadzenDataGridColumn Property="ErrorMessage" Title="Error Message" Width="200px">
                             <Template Context="renameTitle">
                                 <p style="white-space:pre-wrap">@renameTitle.ErrorMessage</p>

@@ -65,17 +65,23 @@ public class RenamerService(
         return Task.FromResult(_collectionRenamerSettings);
     }
     
-    private async Task<(string, bool, string)> TryBuildNewFileNameAsync(LibraryTitleDto fileInfo, string file, RenameType renameType)
+    private async Task<(string, RenameStatus, string)> TryBuildNewFileNameAsync(LibraryTitleDto fileInfo, string file, RenameType renameType)
     {
         try
         {
             var newPath = await BuildNewFileNameAsync(fileInfo, file, renameType);
-            return (newPath, false, string.Empty);
+            return (newPath, RenameStatus.Ready, string.Empty);
+        }
+        catch (InvalidPathException e)
+        {
+            // A rename token (e.g. Region) had no value — the title isn't matchable. Soft warning.
+            logger.LogError("Error building new file name for {file} - {message}", file, e.Message);
+            return (string.Empty, RenameStatus.Warning, e.Message);
         }
         catch (Exception e)
         {
             logger.LogError("Error building new file name for {file} - {message}", file, e.Message);
-            return (string.Empty, true, e.Message);
+            return (string.Empty, RenameStatus.Error, e.Message);
         }
     }
 
@@ -292,27 +298,27 @@ public class RenamerService(
     }
     
     
-    private Task<(string, bool, string)> ValidateDestinationFileAsync(string file, string newPath)
+    private Task<(string, RenameStatus, string)> ValidateDestinationFileAsync(string file, string newPath)
     {
         if (string.IsNullOrEmpty(newPath))
         {
             logger.LogError("Error building new file name for {file} - {message}", file, "New path is empty");
-            return Task.FromResult((string.Empty, true, "New path is empty"));
+            return Task.FromResult((string.Empty, RenameStatus.Error, "New path is empty"));
         }
 
         if (file == newPath)
         {
             logger.LogError("Error building new file name for {file} - {message}", file, "New path is the same as the old path");
-            return Task.FromResult((string.Empty, true, "New path is the same as the old path"));
+            return Task.FromResult((string.Empty, RenameStatus.Error, "New path is the same as the old path"));
         }
 
         if (File.Exists(newPath))
         {
             logger.LogError("Error building new file name for {file} - {message}", file, "File already exists");
-            return Task.FromResult((newPath, true, "File already exists"));
+            return Task.FromResult((newPath, RenameStatus.Warning, "File already exists"));
         }
 
-        return Task.FromResult((newPath, false, string.Empty));
+        return Task.FromResult((newPath, RenameStatus.Ready, string.Empty));
     }
     
     private static string TokenReplace(string input, string pattern, string replacement)
@@ -600,33 +606,41 @@ public class RenamerService(
                 {
                     SourceFileName = file,
                     Error = true,
+                    Status = RenameStatus.Error,
                     ErrorMessage = fileInfoResult.Error
                 });
                 continue;
             }
 
             var fileInfo = fileInfoResult.Value;
-            var (newPath, error, errorMessage) = await TryBuildNewFileNameAsync(fileInfo, file, renameType);
-            if (error)
+            var (newPath, buildStatus, errorMessage) = await TryBuildNewFileNameAsync(fileInfo, file, renameType);
+            if (buildStatus != RenameStatus.Ready)
             {
                 fileList.Add(new RenameTitleDto
                 {
                     SourceFileName = file,
                     Error = true,
+                    Status = buildStatus,
+                    TitleName = fileInfo.TitleName,
+                    TitleId = fileInfo.ApplicationId,
+                    Region = fileInfo.Region,
                     ErrorMessage = errorMessage
                 });
                 continue;
             }
 
-            (newPath, error, errorMessage) = await ValidateDestinationFileAsync(file, newPath);
-            if (error)
+            RenameStatus validateStatus;
+            (newPath, validateStatus, errorMessage) = await ValidateDestinationFileAsync(file, newPath);
+            if (validateStatus != RenameStatus.Ready)
             {
                 fileList.Add(new RenameTitleDto
                 {
                     SourceFileName = file,
                     Error = true,
+                    Status = validateStatus,
                     TitleName = fileInfo.TitleName,
                     TitleId = fileInfo.ApplicationId,
+                    Region = fileInfo.Region,
                     ErrorMessage = errorMessage
                 });
                 continue;
@@ -648,8 +662,10 @@ public class RenamerService(
                 DestinationFileName = newPath,
                 TitleName = fileInfo.TitleName,
                 TitleId = fileInfo.ApplicationId,
+                Region = fileInfo.Region,
                 Duplicate = duplicateOf is not null,
                 DuplicateOf = duplicateOf,
+                Status = duplicateOf is not null ? RenameStatus.Warning : RenameStatus.Ready,
             });
 
         }
