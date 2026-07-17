@@ -11,4 +11,8 @@ public class RenameTitleDto
     public bool RenamedSuccessfully { get; set; }
     public bool Error { get; set; }
     public string? ErrorMessage { get; set; }
+    // True when the library already holds another file with the same title id (a cross-format
+    // dupe the filename check can't catch). DuplicateOf is the path of that existing file.
+    public bool Duplicate { get; set; }
+    public string? DuplicateOf { get; set; }
 }

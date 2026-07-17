@@ -580,6 +580,16 @@ public class RenamerService(
         };
 
         var fileList = new List<RenameTitleDto>();
+
+        // Load the library's title-id -> file-path(s) map once, so the per-file cross-format dupe
+        // check below is an in-memory lookup instead of a query per file (avoids N+1).
+        var libraryByAppId = (await _nsxLibraryDbContext.Titles
+                .Where(t => t.ApplicationId != null && t.FileName != null)
+                .Select(t => new { t.ApplicationId, t.FileName })
+                .ToListAsync())
+            .GroupBy(t => t.ApplicationId!)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.FileName!).ToList());
+
         foreach (var file in files)
         {
             logger.LogInformation("Analyzing {}", file);
@@ -622,12 +632,24 @@ public class RenamerService(
                 continue;
             }
 
+            // Cross-format dupe: the library already holds another file with the same title id
+            // (nsp vs xci vs nsz/xcz differ by filename, so the File.Exists check above misses it).
+            var fullFile = Path.GetFullPath(file);
+            string? duplicateOf = null;
+            if (!string.IsNullOrEmpty(fileInfo.ApplicationId)
+                && libraryByAppId.TryGetValue(fileInfo.ApplicationId, out var sameTitleFiles))
+            {
+                duplicateOf = sameTitleFiles.FirstOrDefault(fn => !string.Equals(fn, fullFile, StringComparison.OrdinalIgnoreCase));
+            }
+
             fileList.Add(new RenameTitleDto
             {
                 SourceFileName = file,
                 DestinationFileName = newPath,
                 TitleName = fileInfo.TitleName,
                 TitleId = fileInfo.ApplicationId,
+                Duplicate = duplicateOf is not null,
+                DuplicateOf = duplicateOf,
             });
 
         }
