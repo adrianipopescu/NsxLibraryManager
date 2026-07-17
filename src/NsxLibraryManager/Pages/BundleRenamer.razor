@@ -31,10 +31,10 @@
                         <RadzenDataGridColumn TItem="RenameTitleDto" Property="TitleId" Title="Title Id" Width="100px"/>
                         <RadzenDataGridColumn TItem="RenameTitleDto" Property="TitleName" Title="Name" Width="100px"/>
                         <RadzenDataGridColumn TItem="RenameTitleDto" Property="Region" Title="Region" Width="60px">
-                            <Template Context="renameTitle">@RenameDisplay.RegionFlag(renameTitle.Region)</Template>
+                            <Template Context="renameTitle"><span title="@renameTitle.Region" style="cursor: help">@RenameDisplay.RegionFlag(renameTitle.Region)</span></Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="RenameTitleDto" Property="Status" Title="Status" Width="60px">
-                            <Template Context="renameTitle">@RenameDisplay.StatusEmoji(renameTitle.Status)</Template>
+                            <Template Context="renameTitle"><span title="@RenameDisplay.StatusTooltip(renameTitle)" style="cursor: help">@RenameDisplay.StatusEmoji(renameTitle.Status)</span></Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="RenameTitleDto" Property="Duplicate" Title="Dupe" Width="50px">
                             <Template Context="renameTitle">@(renameTitle.Duplicate ? "✔️" : "")</Template>
