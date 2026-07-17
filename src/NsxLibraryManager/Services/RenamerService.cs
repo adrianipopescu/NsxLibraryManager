@@ -464,7 +464,8 @@ public class RenamerService(
         return Task.FromResult(newPath);
     }
 
-    private async Task<Result<LibraryTitleDto>> GetAggregatedFileInfo(string fileLocation, bool useEnglishNaming)
+    private async Task<Result<LibraryTitleDto>> GetAggregatedFileInfo(string fileLocation, bool useEnglishNaming,
+        IReadOnlyDictionary<string, string> parentRegions)
     {
         try
         {
@@ -473,23 +474,23 @@ public class RenamerService(
             {
                 return Result.Failure<LibraryTitleDto>(fileInfoResult.Error!);
             }
-            
+
             var fileInfo = fileInfoResult.Value;
 
-            // A DLC/update belongs to its base game: when the parent is already in the local
-            // library, use the parent's region so add-ons stay filed with the game, overriding
-            // titledb's own per-add-on region (which is often inconsistent across one game's DLC).
-            async Task<Result<LibraryTitleDto>> WithParentRegion(LibraryTitleDto fi)
+            // A DLC/update belongs to its base game: when the parent is already in the local library,
+            // use the parent's region so add-ons stay filed with the game, overriding titledb's own
+            // per-add-on region (which is often inconsistent across one game's DLC). Reads the
+            // preloaded region map so it's an in-memory lookup, not a query per file.
+            Task<Result<LibraryTitleDto>> WithParentRegion(LibraryTitleDto fi)
             {
                 if (fi.ContentType is TitleContentType.Update or TitleContentType.DLC
-                    && !string.IsNullOrEmpty(fi.OtherApplicationId))
+                    && !string.IsNullOrEmpty(fi.OtherApplicationId)
+                    && parentRegions.TryGetValue(fi.OtherApplicationId, out var parentRegion)
+                    && !string.IsNullOrEmpty(parentRegion))
                 {
-                    var localParent = await _nsxLibraryDbContext.Titles
-                        .FirstOrDefaultAsync(t => t.ApplicationId == fi.OtherApplicationId);
-                    if (!string.IsNullOrEmpty(localParent?.Region))
-                        fi.Region = localParent.Region;
+                    fi.Region = parentRegion;
                 }
-                return Result.Success(fi);
+                return Task.FromResult(Result.Success(fi));
             }
 
             var titledbTitle =
@@ -587,19 +588,25 @@ public class RenamerService(
 
         var fileList = new List<RenameTitleDto>();
 
-        // Load the library's title-id -> file-path(s) map once, so the per-file cross-format dupe
-        // check below is an in-memory lookup instead of a query per file (avoids N+1).
-        var libraryByAppId = (await _nsxLibraryDbContext.Titles
-                .Where(t => t.ApplicationId != null && t.FileName != null)
-                .Select(t => new { t.ApplicationId, t.FileName })
-                .ToListAsync())
+        // One-shot load of the library keyed by title id, feeding both the cross-format dupe check
+        // and the DLC/update parent-region lookup in-memory instead of a query per file (avoids N+1;
+        // Titles has no index on ApplicationId, so each such query would table-scan 13k+ rows).
+        var libraryRows = await _nsxLibraryDbContext.Titles
+            .Where(t => t.ApplicationId != null && t.FileName != null)
+            .Select(t => new { t.ApplicationId, t.FileName, t.Region })
+            .ToListAsync();
+        var libraryByAppId = libraryRows
             .GroupBy(t => t.ApplicationId!)
             .ToDictionary(g => g.Key, g => g.Select(x => x.FileName!).ToList());
+        var regionByAppId = libraryRows
+            .Where(t => !string.IsNullOrEmpty(t.Region))
+            .GroupBy(t => t.ApplicationId!)
+            .ToDictionary(g => g.Key, g => g.First().Region!);
 
         foreach (var file in files)
         {
             logger.LogInformation("Analyzing {}", file);
-            var fileInfoResult = await GetAggregatedFileInfo(file, useEnglishNaming);
+            var fileInfoResult = await GetAggregatedFileInfo(file, useEnglishNaming, regionByAppId);
             if (fileInfoResult.IsFailure)
             {
                 fileList.Add(new RenameTitleDto
